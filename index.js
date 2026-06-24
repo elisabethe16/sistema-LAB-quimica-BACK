@@ -9,7 +9,6 @@ app.use(cors());
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// Função utilitária para gravar ações no Histórico Geral
 async function registrarNoHistorico(acao, detalhes, usuario_responsavel) {
     try {
         await supabase.from('historico').insert([{ acao, detalhes, usuario_responsavel }]);
@@ -40,7 +39,7 @@ app.post('/registrar-saida', async (req, res) => {
         return res.status(400).json({ error: `Estoque insuficiente! Disponível: ${insumoObj.quantidade_estoque} ${insumoObj.unidade_medida}` });
     }
 
-    const novoEstoque = insumoObj.quantidade_estoque - quantidade;
+    const novoEstoque = insumoObj.quantidade_estoque - quantitative;
     await supabase.from('insumos_cadastrados').update({ quantidade_estoque: novoEstoque }).eq('id', insumoObj.id);
 
     const { data, error } = await supabase.from('movimentacoes').insert([{ usuario, insumo, finalidade, quantidade }]);
@@ -48,7 +47,7 @@ app.post('/registrar-saida', async (req, res) => {
 
     await registrarNoHistorico(
         'Saída de Insumo',
-        `Saída de ${quantidade} ${insumoObj.unidade_medida} de [${insumo}] para: ${usuario}. Estoque atualizado para: ${novoEstoque} ${insumoObj.unidade_medida}.`,
+        `Saída de ${quantidade} ${insumoObj.unidade_medida} de [${insumo}] para: ${usuario}.`,
         usuario_responsavel
     );
 
@@ -62,7 +61,7 @@ app.post('/insumos', async (req, res) => {
     
     if (error) return res.status(400).json({ error: error.message });
 
-    await registrarNoHistorico('Cadastro de Insumo', `Insumo [${nome}] adicionado em [${localizacao}] com ${quantidade_estoque} ${unidade_medida}.`, usuario_responsavel);
+    await registrarNoHistorico('Cadastro de Insumo', `Insumo [${nome}] adicionado em [${localizacao}].`, usuario_responsavel);
     res.status(200).json(data);
 });
 
@@ -79,7 +78,7 @@ app.put('/insumos/:id', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    await registrarNoHistorico('Edição de Insumo', `Insumo ID ${id} atualizado para [${nome}], guardado em [${localizacao}].`, usuario_responsavel);
+    await registrarNoHistorico('Edição de Insumo', `Insumo ID ${id} atualizado para [${nome}].`, usuario_responsavel);
     res.status(200).json({ message: 'Insumo atualizado!' });
 });
 
@@ -96,12 +95,17 @@ app.delete('/insumos/:id', async (req, res) => {
 
 // ==================== GERENCIAMENTO DE USUÁRIOS ====================
 app.post('/usuarios', async (req, res) => {
-    const { nome, login, senha, cargo, matricula, usuario_responsavel } = req.body;
-    const { data, error } = await supabase.from('usuarios').insert([{ nome, login, senha, cargo, matricula }]);
+    const { nome, login, senha, cargo, matricula, usuario_responsavel, cargo_responsavel } = req.body;
 
+    // VALIDAÇÃO HIERÁRQUICA: Professor não pode criar Admin ou Coordenador
+    if (cargo_responsavel === 'Professor' && (cargo === 'Admin' || cargo === 'Coordenador')) {
+        return res.status(403).json({ error: 'Acesso negado. Professores só podem criar contas de Alunos ou Professores.' });
+    }
+
+    const { data, error } = await supabase.from('usuarios').insert([{ nome, login, senha, cargo, matricula }]);
     if (error) return res.status(400).json({ error: 'O login escolhido já está em uso.' });
 
-    await registrarNoHistorico('Cadastro de Usuário', `Novo usuário cadastrado: ${nome} (Matrícula: ${matricula}).`, usuario_responsavel);
+    await registrarNoHistorico('Cadastro de Usuário', `Novo usuário cadastrado: ${nome} com cargo [${cargo}].`, usuario_responsavel);
     res.status(200).json(data);
 });
 
@@ -118,7 +122,7 @@ app.put('/usuarios/:id', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    await registrarNoHistorico('Edição de Usuário', `Usuário ID ${id} (${nome}) atualizado pelo administrador.`, usuario_responsavel);
+    await registrarNoHistorico('Edição de Usuário', `Usuário ID ${id} (${nome}) atualizado.`, usuario_responsavel);
     res.status(200).json({ message: 'Usuário atualizado!' });
 });
 
@@ -129,7 +133,7 @@ app.delete('/usuarios/:id', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    await registrarNoHistorico('Exclusão de Usuário', `Usuário ID ${id} removido do sistema.`, usuario_responsavel);
+    await registrarNoHistorico('Exclusão de Usuário', `Usuário ID ${id} removido.`, usuario_responsavel);
     res.status(200).json({ message: 'Usuário removido!' });
 });
 
