@@ -29,43 +29,40 @@ app.post('/login', async (req, res) => {
     res.status(200).json({ id: data.id, nome: data.nome, cargo: data.cargo });
 });
 
-// ==================== SAÍDA DE INSUMO (COM ABATIMENTO DE ESTOQUE) ====================
+// ==================== SAÍDA DE INSUMO ====================
 app.post('/registrar-saida', async (req, res) => {
     const { usuario, insumo, finalidade, quantidade, usuario_responsavel } = req.body;
 
-    // 1. Busca o insumo para verificar o estoque atual
     const { data: insumoObj, error: fetchErr } = await supabase.from('insumos_cadastrados').select('*').eq('nome', insumo).maybeSingle();
     
     if (fetchErr || !insumoObj) return res.status(404).json({ error: 'Insumo não encontrado no acervo.' });
     if (insumoObj.quantidade_estoque < quantidade) {
-        return res.status(400).json({ error: `Estoque insuficiente! Disponível apenas: ${insumoObj.quantidade_estoque} ${insumoObj.unidade_medida}` });
+        return res.status(400).json({ error: `Estoque insuficiente! Disponível: ${insumoObj.quantidade_estoque} ${insumoObj.unidade_medida}` });
     }
 
-    // 2. Abate a quantidade do estoque do insumo
     const novoEstoque = insumoObj.quantidade_estoque - quantidade;
     await supabase.from('insumos_cadastrados').update({ quantidade_estoque: novoEstoque }).eq('id', insumoObj.id);
 
-    // 3. Registra a movimentação de saída
     const { data, error } = await supabase.from('movimentacoes').insert([{ usuario, insumo, finalidade, quantidade }]);
     if (error) return res.status(400).json({ error: error.message });
 
     await registrarNoHistorico(
         'Saída de Insumo',
-        `Saída de ${quantidade} ${insumoObj.unidade_medida} de [${insumo}] para o aluno/professor: ${usuario}. Estoque atualizado para: ${novoEstoque} ${insumoObj.unidade_medida}.`,
+        `Saída de ${quantidade} ${insumoObj.unidade_medida} de [${insumo}] para: ${usuario}. Estoque atualizado para: ${novoEstoque} ${insumoObj.unidade_medida}.`,
         usuario_responsavel
     );
 
     res.status(200).json({ message: 'Saída registrada com sucesso!', data });
 });
 
-// ==================== GERENCIAMENTO DE INSUMOS (CRUD) ====================
+// ==================== GERENCIAMENTO DE INSUMOS ====================
 app.post('/insumos', async (req, res) => {
-    const { nome, categoria, quantidade_estoque, unidade_medida, usuario_responsavel } = req.body;
-    const { data, error } = await supabase.from('insumos_cadastrados').insert([{ nome, categoria, quantidade_estoque, unidade_medida }]);
+    const { nome, categoria, localizacao, quantidade_estoque, unidade_medida, usuario_responsavel } = req.body;
+    const { data, error } = await supabase.from('insumos_cadastrados').insert([{ nome, categoria, localizacao, quantidade_estoque, unidade_medida }]);
     
     if (error) return res.status(400).json({ error: error.message });
 
-    await registrarNoHistorico('Cadastro de Insumo', `Insumo [${nome}] adicionado à categoria [${categoria}] com ${quantidade_estoque} ${unidade_medida}.`, usuario_responsavel);
+    await registrarNoHistorico('Cadastro de Insumo', `Insumo [${nome}] adicionado em [${localizacao}] com ${quantidade_estoque} ${unidade_medida}.`, usuario_responsavel);
     res.status(200).json(data);
 });
 
@@ -77,12 +74,12 @@ app.get('/insumos', async (req, res) => {
 
 app.put('/insumos/:id', async (req, res) => {
     const { id } = req.params;
-    const { nome, categoria, quantidade_estoque, unidade_medida, usuario_responsavel } = req.body;
-    const { data, error } = await supabase.from('insumos_cadastrados').update({ nome, categoria, quantidade_estoque, unidade_medida }).eq('id', id);
+    const { nome, categoria, localizacao, quantidade_estoque, unidade_medida, usuario_responsavel } = req.body;
+    const { data, error } = await supabase.from('insumos_cadastrados').update({ nome, categoria, localizacao, quantidade_estoque, unidade_medida }).eq('id', id);
 
     if (error) return res.status(400).json({ error: error.message });
 
-    await registrarNoHistorico('Edição de Insumo', `Insumo ID ${id} atualizado para [${nome}], estoque: ${quantidade_estoque} ${unidade_medida}.`, usuario_responsavel);
+    await registrarNoHistorico('Edição de Insumo', `Insumo ID ${id} atualizado para [${nome}], guardado em [${localizacao}].`, usuario_responsavel);
     res.status(200).json({ message: 'Insumo atualizado!' });
 });
 
@@ -93,11 +90,11 @@ app.delete('/insumos/:id', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    await registrarNoHistorico('Exclusão de Insumo', `Insumo ID ${id} removido do sistema.`, usuario_responsavel);
+    await registrarNoHistorico('Exclusão de Insumo', `Insumo ID ${id} removido do acervo.`, usuario_responsavel);
     res.status(200).json({ message: 'Insumo removido!' });
 });
 
-// ==================== GERENCIAMENTO DE USUÁRIOS (CRUD) ====================
+// ==================== GERENCIAMENTO DE USUÁRIOS ====================
 app.post('/usuarios', async (req, res) => {
     const { nome, login, senha, cargo, matricula, usuario_responsavel } = req.body;
     const { data, error } = await supabase.from('usuarios').insert([{ nome, login, senha, cargo, matricula }]);
