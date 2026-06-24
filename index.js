@@ -39,7 +39,7 @@ app.post('/registrar-saida', async (req, res) => {
         return res.status(400).json({ error: `Estoque insuficiente! Disponível: ${insumoObj.quantidade_estoque} ${insumoObj.unidade_medida}` });
     }
 
-    const novoEstoque = insumoObj.quantidade_estoque - quantitative;
+    const novoEstoque = insumoObj.quantidade_estoque - quantidade;
     await supabase.from('insumos_cadastrados').update({ quantidade_estoque: novoEstoque }).eq('id', insumoObj.id);
 
     const { data, error } = await supabase.from('movimentacoes').insert([{ usuario, insumo, finalidade, quantidade }]);
@@ -79,7 +79,7 @@ app.put('/insumos/:id', async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
 
     await registrarNoHistorico('Edição de Insumo', `Insumo ID ${id} atualizado para [${nome}].`, usuario_responsavel);
-    res.status(200).json({ message: 'Insumo atualizado!' });
+    res.status(200).json({ message: 'Insumo updated!' });
 });
 
 app.delete('/insumos/:id', async (req, res) => {
@@ -97,9 +97,9 @@ app.delete('/insumos/:id', async (req, res) => {
 app.post('/usuarios', async (req, res) => {
     const { nome, login, senha, cargo, matricula, usuario_responsavel, cargo_responsavel } = req.body;
 
-    // VALIDAÇÃO HIERÁRQUICA: Professor não pode criar Admin ou Coordenador
-    if (cargo_responsavel === 'Professor' && (cargo === 'Admin' || cargo === 'Coordenador')) {
-        return res.status(403).json({ error: 'Acesso negado. Professores só podem criar contas de Alunos ou Professores.' });
+    // VALIDAÇÃO DE SEGURANÇA NA API: Professor não pode criar um administrador geral
+    if (cargo_responsavel === 'Professor' && cargo === 'Admin') {
+        return res.status(403).json({ error: 'Acesso negado. Professores não possuem permissão para criar administradores.' });
     }
 
     const { data, error } = await supabase.from('usuarios').insert([{ nome, login, senha, cargo, matricula }]);
