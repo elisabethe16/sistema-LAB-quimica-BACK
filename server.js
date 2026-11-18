@@ -72,7 +72,7 @@ app.post('/insumos/upload-imagem', upload.single('imagem'), async (req, res) => 
   const { error } = await supabase.storage.from('insumos-imagens').upload(nomeArquivo, req.file.buffer, {
     contentType: req.file.mimetype, upsert: false
   });
-  if (error) return res.status(400).json({ error: `Falha no upload: ${error.message}` });
+  if (error) return res.status(400).json({ error: /bucket not found/i.test(error.message) ? 'Bucket insumos-imagens não encontrado. Execute migration.sql no Supabase SQL Editor.' : `Falha no upload: ${error.message}` });
   const { data } = supabase.storage.from('insumos-imagens').getPublicUrl(nomeArquivo);
   res.status(201).json({ imagem_url: data.publicUrl });
 });
@@ -97,13 +97,15 @@ app.post('/registrar-saida', async (req, res) => {
 });
 
 app.post('/insumos', async (req, res) => {
-  const { nome, categoria, localizacao, quantidade_estoque, unidade_medida, usuario_responsavel, imagem_url, data_validade, sem_data_validade = true } = req.body || {};
+  const { nome, categoria, localizacao, quantidade_estoque, unidade_medida, usuario_responsavel, imagem_url, data_validade, sem_data_validade = true, quantidade_minima_alerta = 0 } = req.body || {};
   const qtd = Number(quantidade_estoque);
+  const minimo = Number(quantidade_minima_alerta);
+  if (!Number.isInteger(minimo) || minimo < 0) return res.status(400).json({ error: 'Quantidade mínima inválida.' });
   if (!nome || !categoria || !Number.isInteger(qtd) || qtd < 0) return res.status(400).json({ error: 'Preencha nome, categoria e quantidade válida.' });
   const { data, error } = await supabase.from('insumos_cadastrados').insert([{
     nome, categoria, localizacao, quantidade_estoque: qtd, unidade_medida,
     imagem_url: imagem_url || null, data_validade: sem_data_validade ? null : data_validade,
-    sem_data_validade: Boolean(sem_data_validade)
+    sem_data_validade: Boolean(sem_data_validade), quantidade_minima_alerta: minimo
   }]).select();
   if (error) return res.status(400).json({ error: error.message });
   await registrarNoHistorico('Cadastro de Insumo', `Insumo [${nome}] adicionado em [${localizacao}].`, usuario_responsavel);
@@ -118,11 +120,14 @@ app.get('/insumos', async (_req, res) => {
 
 app.put('/insumos/:id', async (req, res) => {
   const { id } = req.params;
-  const { nome, categoria, localizacao, quantidade_estoque, unidade_medida, usuario_responsavel, imagem_url, data_validade, sem_data_validade = true } = req.body || {};
+  const { nome, categoria, localizacao, quantidade_estoque, unidade_medida, usuario_responsavel, imagem_url, data_validade, sem_data_validade = true, quantidade_minima_alerta = 0 } = req.body || {};
+  const minimo = Number(quantidade_minima_alerta);
+  const qtd = Number(quantidade_estoque);
+  if (!Number.isInteger(minimo) || minimo < 0 || !Number.isInteger(qtd) || qtd < 0) return res.status(400).json({ error: 'Quantidades inválidas.' });
   const { error } = await supabase.from('insumos_cadastrados').update({
-    nome, categoria, localizacao, quantidade_estoque, unidade_medida,
+    nome, categoria, localizacao, quantidade_estoque: qtd, unidade_medida,
     imagem_url: imagem_url || null, data_validade: sem_data_validade ? null : data_validade,
-    sem_data_validade: Boolean(sem_data_validade)
+    sem_data_validade: Boolean(sem_data_validade), quantidade_minima_alerta: minimo
   }).eq('id', id);
   if (error) return res.status(400).json({ error: error.message });
   await registrarNoHistorico('Edição de Insumo', `Insumo ID ${id} atualizado para [${nome}].`, usuario_responsavel);
