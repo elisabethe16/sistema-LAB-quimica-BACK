@@ -11,6 +11,9 @@ app.use(express.json({ limit: '2mb' }));
 app.use(cors());
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY);
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('[Lab5S] SUPABASE_SERVICE_ROLE_KEY não configurada. Upload no Storage pode falhar por RLS.');
+}
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -72,7 +75,14 @@ app.post('/insumos/upload-imagem', upload.single('imagem'), async (req, res) => 
   const { error } = await supabase.storage.from('insumos-imagens').upload(nomeArquivo, req.file.buffer, {
     contentType: req.file.mimetype, upsert: false
   });
-  if (error) return res.status(400).json({ error: /bucket not found/i.test(error.message) ? 'Bucket insumos-imagens não encontrado. Execute migration.sql no Supabase SQL Editor.' : `Falha no upload: ${error.message}` });
+  if (error) {
+    const mensagem = error.message || 'Erro desconhecido';
+    if (/row.level security|row-level security|unauthorized|permission denied/i.test(mensagem)) {
+      console.error('Supabase Storage RLS:', mensagem);
+      return res.status(403).json({ error: 'Upload bloqueado pelo Supabase Storage (RLS). Configure SUPABASE_SERVICE_ROLE_KEY nas variáveis secretas do Render e faça novo deploy. Não use a chave anon/publishable no backend para uploads.' });
+    }
+    return res.status(400).json({ error: /bucket not found/i.test(mensagem) ? 'Bucket insumos-imagens não encontrado. Crie-o no Supabase Storage.' : `Falha no upload: ${mensagem}` });
+  }
   const { data } = supabase.storage.from('insumos-imagens').getPublicUrl(nomeArquivo);
   res.status(201).json({ imagem_url: data.publicUrl });
 });
